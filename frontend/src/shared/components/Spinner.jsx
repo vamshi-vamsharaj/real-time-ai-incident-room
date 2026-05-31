@@ -1,34 +1,8 @@
-
-const sizeMap = {
-  sm: "h-4 w-4 border-2",
-  md: "h-8 w-8 border-2",
-  lg: "h-12 w-12 border-[3px]",
-};
-
-const Spinner = ({ size = "md", label = "Loading", center = false }) => {
-  const spinner = (
-    <div
-      role="status"
-      aria-label={label}
-      className={`
-        ${sizeMap[size]}
-        rounded-full
-        border-gray-700
-        border-t-blue-500
-        animate-spin
-      `}
-    />
+const Spinner = ({ size = 'md', className = '' }) => {
+  const sizes = { sm: 'w-4 h-4', md: 'w-6 h-6', lg: 'w-10 h-10' };
+  return (
+    <div className={`${sizes[size]} animate-spin rounded-full border-2 border-slate-200 dark:border-slate-700 border-t-slate-600 dark:border-t-slate-300 ${className}`} />
   );
-
-  if (center) {
-    return (
-      <div className="flex items-center justify-center w-full py-12">
-        {spinner}
-      </div>
-    );
-  }
-
-  return spinner;
 };
 
 export default Spinner;
