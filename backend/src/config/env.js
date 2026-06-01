@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
-
+console.log("GEMINI:", process.env.GEMINI_API_KEY ? "FOUND" : "NOT FOUND");
 const requiredVars = ["MONGO_URI"];
 
 requiredVars.forEach((key) => {

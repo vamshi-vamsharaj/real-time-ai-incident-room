@@ -49,7 +49,7 @@ const UpdateFeed = ({ updates, loading, error, newestId }) => {
   }
 
   return (
-    <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1 scroll-smooth">
+    <div className="space-y-4 pr-1">
       {updates.map((update) => (
         <UpdateItem
           key={update._id}
