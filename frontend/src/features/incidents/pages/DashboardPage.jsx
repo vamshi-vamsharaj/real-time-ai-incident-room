@@ -71,7 +71,11 @@ const STATS = [
 ];
 
 const DashboardPage = () => {
-  const { incidents, loading, error, addIncident } = useIncidents();
+  // removeIncident is the optimistic local-removal fn from useIncidents.
+  // It's also called automatically via the incident:deleted socket event,
+  // so calling it from the card's onDeleted prop (same-tab) just deduplicates
+  // the removal via the existing _id check in the hook.
+  const { incidents, loading, error, addIncident, removeIncident } = useIncidents();
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -124,7 +128,7 @@ const DashboardPage = () => {
             </span>
           </div>
 
-          {/* Search — hidden on mobile (shown in bottom bar) */}
+          {/* Search — hidden on mobile */}
           <div className="flex-1 max-w-sm hidden sm:block">
             <div className="relative">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
@@ -142,13 +146,27 @@ const DashboardPage = () => {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={toggle}
+              className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+              aria-label="Toggle theme"
+            >
+              {dark ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M3.05 3.05l1.06 1.06M9.89 9.89l1.06 1.06M10.95 3.05l-1.06 1.06M4.11 9.89l-1.06 1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M12 7.5A5 5 0 016 2a5 5 0 100 10 5 5 0 006-4.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+              )}
+            </button>
             {/* Live indicator */}
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live
             </span>
-
-            
 
             {/* Create */}
             <button
@@ -176,7 +194,7 @@ const DashboardPage = () => {
           </p>
         </div>
 
-        {/* ── STATS — each card animates its count on live changes ────── */}
+        {/* ── STATS ───────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
           {STATS.map((s) => (
             <StatCard
@@ -259,7 +277,14 @@ const DashboardPage = () => {
             </button>
           </div>
         ) : (
-          <IncidentList incidents={filtered} onCreateClick={() => setShowForm(true)} />
+          // Pass removeIncident so each IncidentCard can call it after
+          // a successful delete (same-tab optimistic update).
+          // The socket handler in useIncidents deduplicates cross-tab removals.
+          <IncidentList
+            incidents={filtered}
+            onCreateClick={() => setShowForm(true)}
+            onDeletedIncident={removeIncident}
+          />
         )}
       </main>
 

@@ -1,10 +1,14 @@
 import * as incidentService from './incident.service.js';
 import asyncHandler from '../../shared/utils/asyncHandler.js';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const serialize = (incident) => ({
   ...incident,
   _id: incident._id.toString(),
 });
+
+// ─── Controllers ──────────────────────────────────────────────────────────────
 
 export const getIncidents = asyncHandler(async (req, res) => {
   const incidents = await incidentService.getAllIncidents();
@@ -26,19 +30,11 @@ export const createIncident = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'All fields are required' });
   }
 
-  const incident = await incidentService.createIncident({
-    title,
-    description,
-    priority,
-    reporter_name,
-  });
+  const incident  = await incidentService.createIncident({ title, description, priority, reporter_name });
   const serialized = serialize(incident);
 
   const io = req.app.get('io');
-  if (io) {
-    // Broadcast to ALL clients so the dashboard updates in every tab
-    io.emit('incident:created', serialized);
-  }
+  if (io) io.emit('incident:created', serialized);
 
   res.status(201).json({ success: true, data: serialized });
 });
@@ -69,15 +65,54 @@ export const patchIncidentStatus = asyncHandler(async (req, res) => {
 
   const io = req.app.get('io');
   if (io) {
-    // Broadcast to ALL clients (dashboard + detail pages in other tabs)
-    // Send the full incident so dashboards can update cards without a re-fetch
     io.emit('incident:status_changed', {
-      incidentId: serialized._id,
-      status: serialized.status,
+      incidentId:     serialized._id,
+      status:         serialized.status,
       previousStatus: result.previousStatus,
-      incident: serialized,         // full payload for detail page
+      incident:       serialized,
     });
   }
 
   res.json({ success: true, data: serialized });
+});
+
+/**
+ * DELETE /api/incidents/:id
+ *
+ * Hard-deletes the incident plus all child records:
+ *   • incident_updates  (Update model — import dynamically to avoid circular deps)
+ *   • ai_results        (AiResult model)
+ *
+ * Emits  incident:deleted  so every connected tab removes the card immediately.
+ */
+export const deleteIncident = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const incident = await incidentService.deleteIncidentById(id);
+  if (!incident) {
+    return res.status(404).json({ success: false, message: 'Incident not found' });
+  }
+
+  // ── Cascade: delete child records ─────────────────────────────────────────
+  // Dynamic imports prevent circular-dependency warnings and keep this file clean.
+  try {
+    const { default: Update }   = await import('../updates/update.model.js');
+    const { default: AiResult } = await import('../ai/aiResult.model.js');
+
+    await Promise.all([
+      Update.deleteMany({ incident_id: id }),
+      AiResult.deleteMany({ incident_id: id }),
+    ]);
+  } catch (cascadeErr) {
+    // Log but do not fail the request — the incident is already deleted.
+    console.error('Cascade delete partial failure:', cascadeErr.message);
+  }
+
+  // ── Real-time broadcast ───────────────────────────────────────────────────
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('incident:deleted', { incidentId: id });
+  }
+
+  res.json({ success: true, message: 'Incident deleted', data: { incidentId: id } });
 });

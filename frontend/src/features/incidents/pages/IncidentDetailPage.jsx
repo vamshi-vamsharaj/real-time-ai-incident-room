@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import useIncident from '../hooks/useIncident';
 import useUpdates from '../../../features/updates/hooks/useUpdates';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
+import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import UpdateFeed from '../../../features/updates/components/UpdateFeed';
 import UpdateForm from '../../../features/updates/components/UpdateForm';
 import Spinner from '../../../shared/components/Spinner';
@@ -38,6 +39,7 @@ const PRIORITY_ACCENT = {
 
 const IncidentDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { dark, toggle } = useTheme();
 
   const {
@@ -47,10 +49,14 @@ const IncidentDetailPage = () => {
     statusChanging,
     statusError,
     changeStatus,
+    deleting,
+    deleteError,
+    removeIncident,
   } = useIncident(id);
 
   const { updates, loading: updatesLoading, error: updatesError, addUpdate } = useUpdates(id);
   const [newestId, setNewestId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const handlePosted = (update) => {
     addUpdate(update);
@@ -59,6 +65,15 @@ const IncidentDetailPage = () => {
 
   const handleStatusChange = async (newStatus) => {
     await changeStatus(newStatus);
+  };
+
+  const handleDeleteConfirm = async () => {
+    const result = await removeIncident();
+    if (result.success) {
+      setShowDeleteModal(false);
+      navigate('/');
+    }
+    // If failed, deleteError will be populated and shown in the modal
   };
 
   if (loading) {
@@ -128,11 +143,6 @@ const IncidentDetailPage = () => {
       <div className={`h-0.5 ${priorityAccent} opacity-70`} />
 
       {/* ── Page body ─────────────────────────────────────────────── */}
-      {/*
-        FIX 1: sidebar width 340px → 420px (minmax(0,1fr) 420px)
-        FIX 2: gap-6 → gap-8 for more breathing room
-        FIX 3: py-6 → py-8 to give both columns room to start level
-      */}
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-8 xl:items-start">
 
@@ -145,15 +155,18 @@ const IncidentDetailPage = () => {
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <PriorityBadge priority={incident.priority} />
-                <StatusBadge status={incident.status} size="lg" />
+                <StatusBadge
+                  status={incident.status}
+                  size="lg"
+                  onChangeStatus={handleStatusChange}
+                  loading={statusChanging}
+                />
               </div>
 
-              {/* FIX 4: title text-xl → text-2xl */}
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 leading-snug mb-2">
                 {incident.title}
               </h1>
 
-              {/* FIX 5: description text-sm stays but color improved */}
               <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-5">
                 {incident.description}
               </p>
@@ -190,7 +203,6 @@ const IncidentDetailPage = () => {
                     <path d="M7 1v4l2.5 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                     <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2" />
                   </svg>
-                  {/* FIX 6: section title text-sm → text-base */}
                   <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
                     Activity
                   </h2>
@@ -234,71 +246,106 @@ const IncidentDetailPage = () => {
           {/* ══════════════════════════════════════════
               RIGHT COLUMN — Sticky sidebar
               ══════════════════════════════════════════ */}
-          {/*
-            FIX 7: sticky top — header is 48px (h-12) + priority bar 2px + page padding 32px (py-8)
-            Using top-6 (24px) because the sidebar is inside the padded grid container,
-            so the offset from viewport top = header(48px) + bar(2px) + container top padding(32px)
-            We want the sidebar to stick 24px below the header bar so: top-[58px]
-          */}
           <aside className="xl:sticky xl:top-[58px] xl:h-[calc(100vh-58px)] xl:overflow-y-auto min-w-0 xl:pr-1">
-  <div className="space-y-5 pb-8">
-            {/* ── Status Workflow ───────────────────────── */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-              {/* FIX 8: section labels text-[10px] → text-xs */}
-              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">
-                Status Workflow
-              </p>
-              <StatusWorkflow
-                currentStatus={incident.status}
-                onChangeStatus={handleStatusChange}
-                loading={statusChanging}
-                error={statusError}
-              />
-            </div>
+            <div className="space-y-5 pb-8">
 
-            {/* ── Incident Details ─────────────────────── */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">
-                Details
-              </p>
-              <div className="space-y-3.5">
-                <DetailRow label="Reporter">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center text-[9px] font-bold text-violet-600 dark:text-violet-400 flex-shrink-0">
-                      {incident.reporter_name?.[0]?.toUpperCase()}
-                    </span>
-                    {/* FIX 9: detail values text-sm stays, consistent */}
-                    <span className="text-sm text-slate-700 dark:text-slate-300">{incident.reporter_name}</span>
-                  </span>
-                </DetailRow>
-                <DetailRow label="Priority">
-                  <PriorityBadge priority={incident.priority} />
-                </DetailRow>
-                <DetailRow label="Status">
-                  <StatusBadge status={incident.status} />
-                </DetailRow>
-                <DetailRow label="Created">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">{fmt(incident.created_at)}</span>
-                </DetailRow>
-                <DetailRow label="Updated">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">{timeAgo(incident.updated_at || incident.created_at)}</span>
-                </DetailRow>
-                {incident.latest_update && (
-                  <DetailRow label="Last note">
-                    <span className="text-xs text-slate-400 dark:text-slate-500 italic leading-relaxed">
-                      {incident.latest_update}
+              {/* ── Status Workflow ───────────────────────── */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">
+                  Status Workflow
+                </p>
+                <StatusWorkflow
+                  currentStatus={incident.status}
+                  onChangeStatus={handleStatusChange}
+                  loading={statusChanging}
+                  error={statusError}
+                />
+              </div>
+
+              {/* ── Incident Details ─────────────────────── */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">
+                  Details
+                </p>
+                <div className="space-y-3.5">
+                  <DetailRow label="Reporter">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center text-[9px] font-bold text-violet-600 dark:text-violet-400 flex-shrink-0">
+                        {incident.reporter_name?.[0]?.toUpperCase()}
+                      </span>
+                      <span className="text-sm text-slate-700 dark:text-slate-300">{incident.reporter_name}</span>
                     </span>
                   </DetailRow>
-                )}
+                  <DetailRow label="Priority">
+                    <PriorityBadge priority={incident.priority} />
+                  </DetailRow>
+                  <DetailRow label="Status">
+                    <StatusBadge status={incident.status} />
+                  </DetailRow>
+                  <DetailRow label="Created">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">{fmt(incident.created_at)}</span>
+                  </DetailRow>
+                  <DetailRow label="Updated">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">{timeAgo(incident.updated_at || incident.created_at)}</span>
+                  </DetailRow>
+                  {incident.latest_update && (
+                    <DetailRow label="Last note">
+                      <span className="text-xs text-slate-400 dark:text-slate-500 italic leading-relaxed">
+                        {incident.latest_update}
+                      </span>
+                    </DetailRow>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* ── AI Analysis ──────────────────────────── */}
-            <AISummaryPanel incidentId={id} isResolved={incident.status === 'resolved'} />
- </div>
+              {/* ── AI Analysis ──────────────────────────── */}
+              <AISummaryPanel incidentId={id} isResolved={incident.status === 'resolved'} />
+
+              {/* ── Quick Actions ─────────────────────────
+                  Danger zone: delete incident
+              ────────────────────────────────────────── */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">
+                  Quick Actions
+                </p>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  disabled={deleting}
+                  className={[
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
+                    'text-sm font-medium transition-all duration-150',
+                    'text-red-600 dark:text-red-400',
+                    'bg-red-50 dark:bg-red-950/20',
+                    'border border-red-200 dark:border-red-800/40',
+                    'hover:bg-red-100 dark:hover:bg-red-950/40 hover:border-red-300 dark:hover:border-red-700/60',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 dark:focus-visible:ring-red-800',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
+                  ].join(' ')}
+                >
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <path
+                      d="M2 3.5h9M5 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M5.5 6v4M7.5 6v4M3 3.5l.5 7a.5.5 0 00.5.5h5a.5.5 0 00.5-.5l.5-7"
+                      stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+                    />
+                  </svg>
+                  Delete Incident
+                </button>
+              </div>
+
+            </div>
           </aside>
         </div>
       </div>
+
+      {/* ── Delete confirmation modal ──────────────────────────── */}
+      {showDeleteModal && (
+        <DeleteConfirmModal
+          onConfirm={handleDeleteConfirm}
+          onClose={() => !deleting && setShowDeleteModal(false)}
+          deleting={deleting}
+          error={deleteError}
+        />
+      )}
     </div>
   );
 };

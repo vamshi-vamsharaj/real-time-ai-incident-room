@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from '../../../context/SocketContext';
-import { fetchIncidentById, patchStatus } from '../services/incidentService';
+import { fetchIncidentById, patchStatus, deleteIncident as deleteIncidentApi } from '../services/incidentService';
 
 /**
  * useIncident(id)
@@ -8,21 +8,20 @@ import { fetchIncidentById, patchStatus } from '../services/incidentService';
  * Powers the Incident Detail Page.
  *
  * - Fetches the incident via REST on mount.
- * - Listens for `incident:status_changed` globally.
- *   When the event matches this incident's id, updates local state.
- *   This means: if someone changes status in another tab, this tab
- *   updates the header badge instantly.
- * - Exposes `changeStatus(newStatus)` which calls PATCH and updates
- *   local state optimistically — the socket echo from the server
- *   will deduplicate since we compare the new status.
+ * - Listens for `incident:status_changed` — updates badge instantly cross-tab.
+ * - Exposes `changeStatus(newStatus)` — optimistic PATCH + socket dedup.
+ * - Exposes `deleteIncident()` — calls DELETE and returns { success }.     ← NEW
  */
 const useIncident = (id) => {
   const socket = useSocket();
-  const [incident, setIncident] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+
+  const [incident,       setIncident]       = useState(null);
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState(null);
   const [statusChanging, setStatusChanging] = useState(false);
-  const [statusError, setStatusError] = useState(null);
+  const [statusError,    setStatusError]    = useState(null);
+  const [deleting,       setDeleting]       = useState(false); // ← NEW
+  const [deleteError,    setDeleteError]    = useState(null);  // ← NEW
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -38,11 +37,9 @@ const useIncident = (id) => {
     }
   }, [id]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  // ── Real-time: status changed in any tab ─────────────────────────────
+  // ── Real-time: status changed in any tab ──────────────────────────────────
   useEffect(() => {
     if (!socket || !id) return;
 
@@ -55,16 +52,13 @@ const useIncident = (id) => {
     return () => socket.off('incident:status_changed', handleStatusChanged);
   }, [socket, id]);
 
-  // ── Action: change status from this tab ──────────────────────────────
+  // ── Action: change status ─────────────────────────────────────────────────
   const changeStatus = useCallback(
     async (newStatus) => {
       setStatusChanging(true);
       setStatusError(null);
       try {
         const updated = await patchStatus(id, newStatus);
-        // Optimistic: update local state immediately.
-        // The socket broadcast will also fire, but the dedup in the handler
-        // (same status === same status → no-op) keeps the state clean.
         setIncident(updated);
         return { success: true };
       } catch (err) {
@@ -78,6 +72,24 @@ const useIncident = (id) => {
     [id]
   );
 
+  // ── Action: delete incident  ← NEW ────────────────────────────────────────
+  const removeIncident = useCallback(async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteIncidentApi(id);
+      // Socket broadcast (incident:deleted) will notify other tabs.
+      // The calling component handles navigation after success.
+      return { success: true };
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to delete incident';
+      setDeleteError(msg);
+      return { success: false, message: msg };
+    } finally {
+      setDeleting(false);
+    }
+  }, [id]);
+
   return {
     incident,
     loading,
@@ -85,6 +97,9 @@ const useIncident = (id) => {
     statusChanging,
     statusError,
     changeStatus,
+    deleting,       // ← NEW
+    deleteError,    // ← NEW
+    removeIncident, // ← NEW
     reload: load,
   };
 };

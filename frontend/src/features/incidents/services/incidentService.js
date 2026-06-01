@@ -23,3 +23,9 @@ export const patchStatus = async (id, status) => {
   const { data } = await api.patch(`/incidents/${id}/status`, { status });
   return data.data;
 };
+
+// ── NEW ───────────────────────────────────────────────────────────────────────
+export const deleteIncident = async (id) => {
+  const { data } = await api.delete(`/incidents/${id}`);
+  return data;
+};
