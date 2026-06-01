@@ -5,6 +5,9 @@ import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
 import Spinner from '../../../shared/components/Spinner';
 import { useTheme } from '../../../context/ThemeContext';
+import UpdateFeed from '../../updates/components/UpdateFeed';
+import UpdateForm from '../../updates/components/UpdateForm';
+import useUpdates from '../../updates/hooks/useUpdates';
 
 const STATUS_TRANSITIONS = {
   open: ['investigating'],
@@ -19,7 +22,12 @@ const IncidentDetailPage = () => {
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(false);
   const { dark, toggle } = useTheme();
-
+const {
+  updates,
+  loading: updatesLoading,
+  error: updatesError,
+  addUpdate,
+} = useUpdates(id);
   useEffect(() => {
     const load = async () => {
       try {
@@ -147,11 +155,22 @@ const IncidentDetailPage = () => {
             )}
 
             {/* Placeholder for Phase 3 features */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-8 text-center">
-              <p className="text-sm text-slate-400 dark:text-slate-500">
-                Real-time updates feed and AI summary panel — coming in Phase 3 & 5
-              </p>
-            </div>
+            <div className="grid gap-6 lg:grid-cols-[1fr_350px]">
+  <div>
+    <UpdateFeed
+      updates={updates}
+      loading={updatesLoading}
+      error={updatesError}
+    />
+  </div>
+
+  <div>
+    <UpdateForm
+      incidentId={id}
+      onPosted={addUpdate}
+    />
+  </div>
+</div>
           </div>
         )}
       </main>

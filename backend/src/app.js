@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import incidentRoutes from './features/incidents/incident.routes.js';
+import updateRoutes from './features/updates/update.routes.js';
 import errorHandler from './shared/middleware/errorHandler.js';
 
 const app = express();
@@ -21,7 +22,11 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Routes
 app.use('/api/incidents', incidentRoutes);
 
-// Global error handler
+// Nested: /api/incidents/:id/updates
+// update.routes.js uses mergeParams: true to access :id from parent
+app.use('/api/incidents/:id/updates', updateRoutes);
+
+// Global error handler — must be last
 app.use(errorHandler);
 
 export default app;

@@ -19,7 +19,7 @@ const io = new Server(httpServer, {
   },
   transports: ["websocket", "polling"],
 });
-
+app.set("io", io);
 initSocket(io);
 
 httpServer.listen(env.PORT, () => {
