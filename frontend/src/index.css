@@ -2,27 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Prevent dark mode flash on reload */
+/* ── Theme ────────────────────────────────────────────────────────────── */
 :root { color-scheme: light dark; }
 
-/* Smooth theme transitions */
+/* Smooth background/border transitions only — not transforms (would fight animations) */
 *, *::before, *::after {
-  transition-property: background-color, border-color;
+  transition-property: background-color, border-color, color, opacity;
   transition-duration: 200ms;
   transition-timing-function: ease;
 }
 
-/* Prevent transition on first paint */
-.no-transition, .no-transition * {
-  transition: none !important;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; }
+/* ── Custom scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
 .dark ::-webkit-scrollbar-thumb { background: #334155; }
 
-/* Line clamp utility */
-.line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
-.line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* ── Animations ───────────────────────────────────────────────────────── */
+/* These duplicate the tailwind keyframes config so they're available
+   via both Tailwind utilities and plain className usage */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes countPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.animate-fadeIn  { animation: fadeIn  0.25s ease-out both; }
+.animate-slideUp { animation: slideUp 0.30s ease-out both; }
+.animate-countPop { animation: countPop 0.35s ease-out both; }
+
+/* ── Line-clamp utilities ─────────────────────────────────────────────── */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

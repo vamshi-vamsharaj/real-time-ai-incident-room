@@ -4,31 +4,35 @@ import socket from '../shared/socket/socket';
 const SocketContext = createContext(null);
 
 /**
- * SocketProvider wraps the whole app.
- * It connects the singleton socket on mount and disconnects on unmount.
+ * SocketProvider
  *
- * All child components that need real-time access call useSocket().
+ * Manages the singleton socket connection lifecycle:
+ *   - Connects on mount
+ *   - Logs connection events in dev
+ *   - Disconnects on unmount (app teardown)
+ *
+ * All children access the socket instance via useSocket().
+ * The socket singleton means one WS connection per browser tab.
  */
 export const SocketProvider = ({ children }) => {
   useEffect(() => {
     socket.connect();
 
-    socket.on('connect', () => {
+    const onConnect = () =>
       console.log(`[socket] connected  id=${socket.id}`);
-    });
-
-    socket.on('disconnect', (reason) => {
+    const onDisconnect = (reason) =>
       console.log(`[socket] disconnected  reason=${reason}`);
-    });
+    const onError = (err) =>
+      console.warn(`[socket] error  ${err.message}`);
 
-    socket.on('connect_error', (err) => {
-      console.warn(`[socket] connection error  ${err.message}`);
-    });
+    socket.on('connect',       onConnect);
+    socket.on('disconnect',    onDisconnect);
+    socket.on('connect_error', onError);
 
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('connect_error');
+      socket.off('connect',       onConnect);
+      socket.off('disconnect',    onDisconnect);
+      socket.off('connect_error', onError);
       socket.disconnect();
     };
   }, []);
@@ -40,4 +44,8 @@ export const SocketProvider = ({ children }) => {
   );
 };
 
-export const useSocket = () => useContext(SocketContext);
+export const useSocket = () => {
+  const ctx = useContext(SocketContext);
+  if (!ctx) throw new Error('useSocket must be used inside <SocketProvider>');
+  return ctx;
+};

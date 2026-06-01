@@ -1,9 +1,14 @@
 import Incident from './incident.model.js';
 
+// Valid forward transitions only — no going backwards
+const TRANSITIONS = {
+  open: ['investigating'],
+  investigating: ['resolved'],
+  resolved: [],
+};
+
 export const getAllIncidents = async () => {
-  return await Incident.find()
-    .sort({ updated_at: -1 })
-    .lean();
+  return await Incident.find().sort({ updated_at: -1 }).lean();
 };
 
 export const getIncidentById = async (id) => {
@@ -18,11 +23,29 @@ export const createIncident = async ({ title, description, priority, reporter_na
   return incident.toObject();
 };
 
-export const updateIncidentStatus = async (id, status) => {
-  const incident = await Incident.findByIdAndUpdate(
+/**
+ * Validates the transition is legal before persisting.
+ * Returns { error } if invalid, { incident } if success.
+ */
+export const updateIncidentStatus = async (id, newStatus) => {
+  const current = await Incident.findById(id).lean();
+  if (!current) return { error: 'not_found' };
+
+  const allowed = TRANSITIONS[current.status] || [];
+  if (!allowed.includes(newStatus)) {
+    return {
+      error: 'invalid_transition',
+      from: current.status,
+      to: newStatus,
+      allowed,
+    };
+  }
+
+  const updated = await Incident.findByIdAndUpdate(
     id,
-    { status },
+    { status: newStatus },
     { new: true, runValidators: true }
   ).lean();
-  return incident;
+
+  return { incident: updated, previousStatus: current.status };
 };

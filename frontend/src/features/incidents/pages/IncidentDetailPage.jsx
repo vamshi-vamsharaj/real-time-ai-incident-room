@@ -1,179 +1,277 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchIncidentById, patchStatus } from '../services/incidentService';
+import useIncident from '../hooks/useIncident';
+import useUpdates from '../../../features/updates/hooks/useUpdates';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
+import StatusWorkflow from '../components/StatusWorkflow';
+import UpdateFeed from '../../../features/updates/components/UpdateFeed';
+import UpdateForm from '../../../features/updates/components/UpdateForm';
 import Spinner from '../../../shared/components/Spinner';
 import { useTheme } from '../../../context/ThemeContext';
-import UpdateFeed from '../../updates/components/UpdateFeed';
-import UpdateForm from '../../updates/components/UpdateForm';
-import useUpdates from '../../updates/hooks/useUpdates';
 
-const STATUS_TRANSITIONS = {
-  open: ['investigating'],
-  investigating: ['resolved'],
-  resolved: [],
+// ── Tiny helpers ──────────────────────────────────────────────────────
+const fmt = (dateStr) =>
+  dateStr
+    ? new Date(dateStr).toLocaleString(undefined, {
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : '—';
+
+const timeAgo = (dateStr) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 };
 
+// ── Sidebar row ───────────────────────────────────────────────────────
+const MetaRow = ({ label, children }) => (
+  <div>
+    <p className="text-[11px] text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">
+      {label}
+    </p>
+    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{children}</div>
+  </div>
+);
+
+// ── Main component ────────────────────────────────────────────────────
 const IncidentDetailPage = () => {
   const { id } = useParams();
-  const [incident, setIncident] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [updating, setUpdating] = useState(false);
   const { dark, toggle } = useTheme();
-const {
-  updates,
-  loading: updatesLoading,
-  error: updatesError,
-  addUpdate,
-} = useUpdates(id);
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchIncidentById(id);
-        setIncident(data);
-      } catch {
-        setError('Incident not found or failed to load');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [id]);
 
-  const handleStatusChange = async (newStatus) => {
-    setUpdating(true);
-    try {
-      const updated = await patchStatus(id, newStatus);
-      setIncident(updated);
-    } catch {
-      // fail silently on detail page — socket will handle in Phase 3
-    } finally {
-      setUpdating(false);
-    }
+  const {
+    incident,
+    loading,
+    error,
+    statusChanging,
+    statusError,
+    changeStatus,
+  } = useIncident(id);
+
+  const { updates, loading: updatesLoading, error: updatesError, addUpdate } = useUpdates(id);
+
+  const [newestId, setNewestId] = useState(null);
+
+  const handlePosted = (update) => {
+    addUpdate(update);
+    setNewestId(update._id);
   };
 
-  const nextStatuses = incident ? STATUS_TRANSITIONS[incident.status] : [];
+  const handleStatusChange = async (newStatus) => {
+    await changeStatus(newStatus);
+  };
 
+  // ── Loading / Error ───────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0f] flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error || !incident) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0f] flex flex-col items-center justify-center gap-3">
+        <p className="text-sm text-red-600 dark:text-red-400">{error || 'Incident not found'}</p>
+        <Link to="/" className="text-xs text-slate-500 underline">← Back to dashboard</Link>
+      </div>
+    );
+  }
+
+  // ── Page ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0f] transition-colors duration-300">
+
       {/* Navbar */}
       <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60">
-        <div className="max-w-4xl mx-auto px-5 sm:px-8 h-14 flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-14 flex items-center gap-3">
           <Link
             to="/"
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors flex-shrink-0"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M9 12L3 7l6-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Back
+            Dashboard
           </Link>
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-md bg-slate-900 dark:bg-slate-100 flex items-center justify-center">
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                  <path d="M7 1L1 4v6l6 3 6-3V4L7 1z" stroke="white" className="dark:stroke-slate-900" strokeWidth="1.2" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">IncidentRoom</span>
-            </div>
-            <button onClick={toggle} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all ml-2">
-              {dark ? (
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" stroke="currentColor" strokeWidth="1.5" /><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 8.5A5.5 5.5 0 017.5 2.5a5.5 5.5 0 100 11 5.5 5.5 0 006-5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              )}
-            </button>
+
+          {/* Breadcrumb */}
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-slate-300 dark:text-slate-600">
+            <path d="M5 2l4 5-4 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          <span className="text-sm text-slate-900 dark:text-slate-100 font-medium truncate max-w-xs">
+            {incident.title}
+          </span>
+
+          <div className="ml-auto flex items-center gap-2">
+            {/* Live badge */}
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+
+            
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-5 sm:px-8 py-10">
-        {loading ? (
-          <div className="flex justify-center py-32"><Spinner size="lg" /></div>
-        ) : error ? (
-          <div className="text-center py-24">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-            <Link to="/" className="mt-4 inline-block text-xs text-slate-500 underline">Go back</Link>
-          </div>
-        ) : incident && (
-          <div className="space-y-6">
+      {/* ── BODY: 2-col layout ─────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+        <div className="flex flex-col xl:flex-row gap-6">
+
+          {/* ── LEFT: Main content ────────────────────────────────── */}
+          <div className="flex-1 min-w-0 space-y-5">
+
             {/* Header card */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-7">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              {/* Badges */}
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <PriorityBadge priority={incident.priority} />
-                <StatusBadge status={incident.status} />
+                {/* StatusBadge transitions smoothly when status changes via socket */}
+                <StatusBadge status={incident.status} size="lg" />
               </div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-3 leading-snug">
+
+              {/* Title */}
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-50 leading-snug mb-3">
                 {incident.title}
               </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+
+              {/* Description */}
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                 {incident.description}
               </p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-5 border-t border-slate-100 dark:border-slate-800">
-                <div>
-                  <p className="text-[11px] text-slate-400 uppercase tracking-widest mb-1">Reporter</p>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{incident.reporter_name}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-slate-400 uppercase tracking-widest mb-1">Created</p>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                    {new Date(incident.created_at).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-slate-400 uppercase tracking-widest mb-1">Updated</p>
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                    {new Date(incident.updated_at).toLocaleString()}
-                  </p>
-                </div>
-              </div>
             </div>
 
-            {/* Status actions */}
-            {nextStatuses.length > 0 && (
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
-                <p className="text-xs font-medium text-slate-500 mb-3">Advance Status</p>
-                <div className="flex gap-2">
-                  {nextStatuses.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => handleStatusChange(s)}
-                      disabled={updating}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-lg hover:bg-slate-700 dark:hover:bg-white disabled:opacity-50 transition-all capitalize"
-                    >
-                      {updating ? <Spinner size="sm" /> : null}
-                      Mark as {s}
-                    </button>
-                  ))}
-                </div>
+            {/* Activity timeline */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              <div className="flex items-center gap-2 mb-5">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-slate-400">
+                  <path d="M8 2v4l2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
+                </svg>
+                <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Activity
+                </h2>
+                {!updatesLoading && (
+                  <span className="ml-auto text-[11px] text-slate-400 tabular-nums">
+                    {updates.length} update{updates.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+
+              <UpdateFeed
+                updates={updates}
+                loading={updatesLoading}
+                error={updatesError}
+                newestId={newestId}
+              />
+            </div>
+
+            {/* Post update form */}
+            {incident.status !== 'resolved' && (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4">
+                  Post Update
+                </h2>
+                <UpdateForm incidentId={id} onPosted={handlePosted} />
               </div>
             )}
 
-            {/* Placeholder for Phase 3 features */}
-            <div className="grid gap-6 lg:grid-cols-[1fr_350px]">
-  <div>
-    <UpdateFeed
-      updates={updates}
-      loading={updatesLoading}
-      error={updatesError}
-    />
-  </div>
-
-  <div>
-    <UpdateForm
-      incidentId={id}
-      onPosted={addUpdate}
-    />
-  </div>
-</div>
+            {/* Resolved — no more updates allowed */}
+            {incident.status === 'resolved' && (
+              <div className="flex items-center gap-3 px-5 py-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-sm text-slate-400 dark:text-slate-500">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M5.5 8l2 2L10.5 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                This incident has been resolved. No further updates can be posted.
+              </div>
+            )}
           </div>
-        )}
-      </main>
+
+          {/* ── RIGHT: Sidebar ────────────────────────────────────── */}
+          <aside className="xl:w-72 flex-shrink-0 space-y-4">
+
+            {/* Status workflow */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">
+                Status Workflow
+              </p>
+              <StatusWorkflow
+                currentStatus={incident.status}
+                onChangeStatus={handleStatusChange}
+                loading={statusChanging}
+                error={statusError}
+              />
+            </div>
+
+            {/* Metadata */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                Details
+              </p>
+
+              <MetaRow label="Reporter">
+                <span className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                    {incident.reporter_name?.[0]?.toUpperCase()}
+                  </span>
+                  {incident.reporter_name}
+                </span>
+              </MetaRow>
+
+              <MetaRow label="Priority">
+                <PriorityBadge priority={incident.priority} />
+              </MetaRow>
+
+              <MetaRow label="Status">
+                <StatusBadge status={incident.status} />
+              </MetaRow>
+
+              <MetaRow label="Created">
+                <span className="text-slate-600 dark:text-slate-300 text-sm">
+                  {fmt(incident.created_at)}
+                </span>
+              </MetaRow>
+
+              <MetaRow label="Last Updated">
+                <span className="text-slate-600 dark:text-slate-300 text-sm">
+                  {timeAgo(incident.updated_at || incident.created_at)}
+                </span>
+              </MetaRow>
+
+              {incident.latest_update && (
+                <MetaRow label="Latest Update">
+                  <span className="text-slate-500 dark:text-slate-400 text-xs italic leading-relaxed">
+                    {incident.latest_update}
+                  </span>
+                </MetaRow>
+              )}
+            </div>
+
+            {/* Phase 5 placeholder */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-5 text-center">
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center mx-auto mb-2">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-slate-400">
+                  <path d="M7 1l1.8 3.6L13 5.5l-3 2.9.7 4.1L7 10.4 3.3 12.5l.7-4.1-3-2.9 4.2-.9L7 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                AI Summary
+              </p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                Coming in Phase 5
+              </p>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 };

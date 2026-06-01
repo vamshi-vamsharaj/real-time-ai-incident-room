@@ -1,10 +1,14 @@
 import * as incidentService from './incident.service.js';
 import asyncHandler from '../../shared/utils/asyncHandler.js';
 
+const serialize = (incident) => ({
+  ...incident,
+  _id: incident._id.toString(),
+});
+
 export const getIncidents = asyncHandler(async (req, res) => {
   const incidents = await incidentService.getAllIncidents();
-  const serialized = incidents.map((i) => ({ ...i, _id: i._id.toString() }));
-  res.json({ success: true, data: serialized });
+  res.json({ success: true, data: incidents.map(serialize) });
 });
 
 export const getIncident = asyncHandler(async (req, res) => {
@@ -12,7 +16,7 @@ export const getIncident = asyncHandler(async (req, res) => {
   if (!incident) {
     return res.status(404).json({ success: false, message: 'Incident not found' });
   }
-  res.json({ success: true, data: { ...incident, _id: incident._id.toString() } });
+  res.json({ success: true, data: serialize(incident) });
 });
 
 export const createIncident = asyncHandler(async (req, res) => {
@@ -22,12 +26,17 @@ export const createIncident = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'All fields are required' });
   }
 
-  const incident = await incidentService.createIncident({ title, description, priority, reporter_name });
-  const serialized = { ...incident, _id: incident._id.toString() };
+  const incident = await incidentService.createIncident({
+    title,
+    description,
+    priority,
+    reporter_name,
+  });
+  const serialized = serialize(incident);
 
-  // Emit socket event to all clients
   const io = req.app.get('io');
   if (io) {
+    // Broadcast to ALL clients so the dashboard updates in every tab
     io.emit('incident:created', serialized);
   }
 
@@ -42,16 +51,32 @@ export const patchIncidentStatus = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid status value' });
   }
 
-  const incident = await incidentService.updateIncidentStatus(req.params.id, status);
-  if (!incident) {
+  const result = await incidentService.updateIncidentStatus(req.params.id, status);
+
+  if (result.error === 'not_found') {
     return res.status(404).json({ success: false, message: 'Incident not found' });
   }
 
-  const serialized = { ...incident, _id: incident._id.toString() };
+  if (result.error === 'invalid_transition') {
+    const msg =
+      result.allowed.length === 0
+        ? `Incident is already resolved and cannot be changed`
+        : `Cannot transition from "${result.from}" to "${result.to}". Allowed: ${result.allowed.join(', ')}`;
+    return res.status(400).json({ success: false, message: msg });
+  }
+
+  const serialized = serialize(result.incident);
 
   const io = req.app.get('io');
   if (io) {
-    io.emit('incident:status_changed', { incidentId: serialized._id, status });
+    // Broadcast to ALL clients (dashboard + detail pages in other tabs)
+    // Send the full incident so dashboards can update cards without a re-fetch
+    io.emit('incident:status_changed', {
+      incidentId: serialized._id,
+      status: serialized.status,
+      previousStatus: result.previousStatus,
+      incident: serialized,         // full payload for detail page
+    });
   }
 
   res.json({ success: true, data: serialized });
